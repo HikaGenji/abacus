@@ -40,7 +40,7 @@ market-data-pub             md-handler  strategy          order-gateway
 | `md-handler` | zenoh | iceoryx2 | Bridges external feed onto the local shared-memory bus |
 | `strategy` | iceoryx2 | iceoryx2 | EMA-20 momentum signal; emits `OrderSignal` on crossing |
 | `order-gateway` | iceoryx2 | zenoh | Routes orders to the exchange; logs end-to-end latency |
-| `recorder` | iceoryx2 + zenoh | QuestDB + InfluxDB | Persists ticks and orders for TCA and auditing |
+| `recorder` | iceoryx2 + zenoh | QuestDB | Persists ticks and orders for TCA and auditing |
 | `latency-bench` | — | — | Standalone iceoryx2 ping-pong benchmark |
 
 ---
@@ -60,8 +60,7 @@ market-data-pub             md-handler  strategy          order-gateway
 | Service | Port(s) | Role |
 |---------|---------|------|
 | **QuestDB** | 9000 (console), 9009 (ILP TCP), 8812 (PostgreSQL) | Stores every tick and order signal for TCA and auditing |
-| **InfluxDB** | 8086 | Receives latency percentile metrics every 5 s |
-| **Grafana** | 3000 | Dashboards connecting to both QuestDB and InfluxDB |
+| **Grafana** | 3000 | Dashboards — connects to QuestDB via PostgreSQL data source |
 
 The pipeline itself (`market-data-pub`, `md-handler`, `strategy`, `order-gateway`) has **no Docker dependency** — it runs as plain Rust binaries.
 
@@ -102,7 +101,6 @@ Once `--record` is running:
 | UI | URL | Purpose |
 |----|-----|---------|
 | QuestDB web console | http://localhost:9000 | SQL queries on raw tick/order data |
-| InfluxDB | http://localhost:8086 | Latency metrics (token: `hft_token`) |
 | Grafana | http://localhost:3000 | Dashboards (admin / admin) |
 
 **Example TCA queries in QuestDB:**

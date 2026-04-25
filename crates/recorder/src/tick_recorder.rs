@@ -1,26 +1,10 @@
-//! Tick recorder — persists every MarketTick to QuestDB.
-//!
-//! An iceoryx2 subscriber runs in a dedicated `std::thread` (iceoryx2 is
-//! synchronous) and forwards ticks over a bounded `tokio::sync::mpsc` channel.
-//! The async `run` task drains the channel, buffers ILP lines, and flushes to
-//! QuestDB every 100 ms or when the buffer reaches 32 KB.
-//!
-//! If the channel fills up (recorder can't keep up with tick rate), the newest
-//! ticks are silently dropped — latency beats completeness on the hot path.
-
 use crate::ilp::IlpWriter;
-use crate::influx::InfluxClient;
-use common::{now_ns, MarketTick};
+use common::MarketTick;
 use iceoryx2::prelude::*;
-use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::mpsc;
 use tracing::{info, warn};
 
-/// Spawn the iceoryx2 tick subscriber in a blocking thread.
-///
-/// The thread spin-polls the shared-memory service and forwards ticks to the
-/// tokio `mpsc` channel with `try_send` (non-blocking).
 pub fn spawn_iox_tick_thread(service_name: String, tx: mpsc::Sender<MarketTick>) {
     std::thread::spawn(move || {
         let node = NodeBuilder::new()
@@ -40,10 +24,7 @@ pub fn spawn_iox_tick_thread(service_name: String, tx: mpsc::Sender<MarketTick>)
         loop {
             while let Some(sample) = subscriber.receive().unwrap() {
                 let tick: MarketTick = *sample;
-                // try_send: if the channel is full the tick is dropped.
-                // This is intentional — the recorder never blocks the hot path.
                 if tx.try_send(tick).is_err() {
-                    // Warn only occasionally to avoid log spam
                     static DROP_COUNT: std::sync::atomic::AtomicU64 =
                         std::sync::atomic::AtomicU64::new(0);
                     let n = DROP_COUNT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
@@ -57,19 +38,12 @@ pub fn spawn_iox_tick_thread(service_name: String, tx: mpsc::Sender<MarketTick>)
     });
 }
 
-/// Async task: drain tick channel → QuestDB ILP, throughput metrics → InfluxDB.
-pub async fn run(
-    mut rx: mpsc::Receiver<MarketTick>,
-    questdb_addr: String,
-    influx: Arc<InfluxClient>,
-    symbol: String,
-) {
+pub async fn run(mut rx: mpsc::Receiver<MarketTick>, questdb_addr: String) {
     let mut writer = IlpWriter::new(&questdb_addr);
     let mut flush_ticker = tokio::time::interval(Duration::from_millis(100));
     let mut stats_ticker = tokio::time::interval(Duration::from_secs(5));
     let mut ticks_total: u64 = 0;
 
-    // Discard the first immediate tick from intervals
     flush_ticker.tick().await;
     stats_ticker.tick().await;
 
@@ -77,7 +51,7 @@ pub async fn run(
 
     loop {
         tokio::select! {
-            biased; // check data before timers
+            biased;
 
             result = rx.recv() => {
                 match result {
@@ -101,15 +75,7 @@ pub async fn run(
             }
 
             _ = stats_ticker.tick() => {
-                let body = format!(
-                    "throughput,symbol={sym} ticks_total={n}i {ts}\n",
-                    sym = symbol,
-                    n   = ticks_total,
-                    ts  = now_ns(),
-                );
-                let influx = influx.clone();
-                tokio::spawn(async move { influx.write(body).await });
-                info!(ticks_total, "tick throughput reported to InfluxDB");
+                info!(ticks_total, "tick throughput");
             }
         }
     }

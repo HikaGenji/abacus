@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Start QuestDB, InfluxDB, and Grafana for the HFT demo recorder.
+# Start QuestDB and Grafana for the HFT demo recorder.
 # Requires Docker + Docker Compose.
 
 set -euo pipefail
@@ -21,14 +21,12 @@ case "$ACTION" in
     echo "  QuestDB  web console : http://localhost:9000"
     echo "  QuestDB  ILP TCP     : localhost:9009"
     echo "  QuestDB  PostgreSQL  : localhost:8812"
-    echo "  InfluxDB UI          : http://localhost:8086"
-    echo "  InfluxDB token       : hft_token"
     echo "  Grafana              : http://localhost:3000  (admin / admin)"
     echo ""
     echo "Run the recorder:"
     echo "  RUST_LOG=info ./target/release/recorder"
     echo ""
-    echo "Query tick data (QuestDB web console):"
+    echo "Quick QuestDB queries:"
     cat <<'EOF'
   SELECT timestamp, symbol, bid, ask, mid, spread
   FROM market_ticks

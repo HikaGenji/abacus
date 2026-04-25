@@ -1,26 +1,20 @@
-//! Order recorder — persists OrderSignal to QuestDB, latency metrics to InfluxDB.
+//! Order recorder — persists every OrderSignal to QuestDB and logs latency stats.
 //!
-//! Subscribes to the zenoh key `exchange/orders/BTCUSD` — the final hop in the
-//! pipeline after the order-gateway has dispatched the order.  Adding `now_ns()`
-//! at this point gives us the submission timestamp, enabling three latency measures:
+//! decision_ns   = signal_ns − tick_ns        (strategy think time)
+//! submission_ns = submitted_ns − signal_ns   (gateway + routing overhead)
+//! e2e_ns        = submitted_ns − tick_ns     (full tick-to-order path)
 //!
-//!   decision_ns   = signal_ns − tick_ns        (strategy think time)
-//!   submission_ns = submitted_ns − signal_ns   (gateway + routing overhead)
-//!   e2e_ns        = submitted_ns − tick_ns     (full tick-to-order path)
-//!
-//! Every 5 s the latency distributions are sorted and percentile metrics are
-//! posted to InfluxDB for Grafana dashboards.
+//! Latency percentiles are logged every 5 s and available for ad-hoc query in
+//! QuestDB:
+//!   SELECT percentile_approx(e2e_ns, 0.99) FROM order_signals SAMPLE BY 1m;
 
 use crate::ilp::IlpWriter;
-use crate::influx::{execution_latency_ilp, throughput_ilp, InfluxClient};
 use common::{now_ns, OrderSignal};
-use std::sync::Arc;
 use std::time::Duration;
 use tracing::{info, warn};
 
 pub async fn run(
     questdb_addr: String,
-    influx: Arc<InfluxClient>,
     symbol: String,
     zenoh_session: zenoh::Session,
     order_key: String,
@@ -39,7 +33,7 @@ pub async fn run(
     let mut decision_latencies: Vec<u64> = Vec::with_capacity(1024);
     let mut orders_total: u64 = 0;
 
-    stats_ticker.tick().await; // discard first immediate tick
+    stats_ticker.tick().await;
 
     info!(key = %order_key, "order recorder ready");
 
@@ -65,7 +59,6 @@ pub async fn run(
                         decision_latencies.push(decision_ns);
                         orders_total += 1;
 
-                        // Write order to QuestDB immediately (orders are rare)
                         writer.push_order(&order, submitted_ns);
                         writer.flush().await;
 
@@ -93,28 +86,22 @@ pub async fn run(
 
                 e2e_latencies.sort_unstable();
                 decision_latencies.sort_unstable();
-                let ts = now_ns();
 
-                let mut body = execution_latency_ilp(
-                    &symbol,
-                    &e2e_latencies,
-                    &decision_latencies,
-                    orders_total,
-                    ts,
-                );
-                body.push_str(&throughput_ilp(&symbol, orders_total, ts));
-
-                let e2e_p50 = e2e_latencies[e2e_latencies.len() / 2];
-                let e2e_p99 = e2e_latencies[(e2e_latencies.len() * 99 / 100).min(e2e_latencies.len() - 1)];
-
-                let influx = influx.clone();
-                tokio::spawn(async move { influx.write(body).await });
+                let n = e2e_latencies.len();
+                let p50  = e2e_latencies[n / 2];
+                let p99  = e2e_latencies[(n * 99 / 100).min(n - 1)];
+                let p999 = e2e_latencies[(n * 999 / 1000).min(n - 1)];
+                let dp50 = decision_latencies[n / 2];
+                let dp99 = decision_latencies[(n * 99 / 100).min(n - 1)];
 
                 info!(
                     orders_total,
-                    e2e_p50_ns = e2e_p50,
-                    e2e_p99_ns = e2e_p99,
-                    "execution metrics reported to InfluxDB"
+                    e2e_p50_ns  = p50,
+                    e2e_p99_ns  = p99,
+                    e2e_p999_ns = p999,
+                    decision_p50_ns = dp50,
+                    decision_p99_ns = dp99,
+                    "latency percentiles"
                 );
 
                 e2e_latencies.clear();

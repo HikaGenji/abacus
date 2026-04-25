@@ -411,19 +411,16 @@ zenoh (exchange/orders/BTCUSD)
         │
         ▼
   [async subscriber]  ──────────►  QuestDB  (order_signals table)
-                        │
-                        └────────►  InfluxDB  (execution_latency measurement)
 ```
 
 Market ticks arrive via iceoryx2.  A dedicated `std::thread` spins on the
 subscriber (keeping it off the tokio thread pool) and pushes ticks across a
 `tokio::sync::mpsc` channel into an async task.  That task batches rows into
-InfluxDB Line Protocol strings and flushes over TCP every 100 ms or 32 KB —
-whichever comes first.
+ILP strings and flushes over TCP every 100 ms or 32 KB — whichever comes first.
 
 Order signals arrive via zenoh.  Every order triggers an immediate QuestDB write
-(sub-millisecond latency to disk) and accumulates into latency percentile buckets
-that are posted to InfluxDB every five seconds for Grafana dashboards.
+(sub-millisecond latency to disk).  Latency percentiles are logged every five
+seconds and queryable live from QuestDB using `SAMPLE BY`.
 
 ### Why QuestDB for ticks?
 
@@ -571,33 +568,32 @@ FROM ( /* horizon join query above */ );
 | Negative at 30 s | Adverse selection; faster participants are trading against you |
 | Reverting after 5 m | Mean-reversion trades working as intended |
 
-### Grafana dashboards via InfluxDB
+### Grafana dashboards
 
-The recorder also posts aggregated latency metrics to InfluxDB every five seconds.
-This feeds a Grafana dashboard showing real-time p50/p99/p999 latency, orders per
-second, and tick throughput — without burdening QuestDB with repeated percentile
-queries:
+QuestDB exposes a PostgreSQL wire protocol on port 8812 that Grafana connects to
+directly — no secondary metrics store needed.  Add a single PostgreSQL data source
+(host `questdb`, port `8812`, database `qdb`, user `admin`, password `quest`) and
+write SQL panels directly against `market_ticks` and `order_signals`.
 
-```
-InfluxDB measurement: execution_latency
-  tag:  symbol = BTCUSD
-  fields: e2e_p50_ns, e2e_p99_ns, e2e_p999_ns,
-          decision_p50_ns, decision_p99_ns,
-          orders_total
-```
-
-Start the full infrastructure with Docker Compose:
+Start the full stack with a single flag:
 
 ```bash
-./scripts/run_infra.sh          # starts QuestDB, InfluxDB, Grafana
 cargo build --release
-./scripts/run_demo.sh           # pipeline
-RUST_LOG=info ./target/release/recorder   # recorder
+./scripts/run_demo.sh --record   # starts QuestDB, Grafana, pipeline, and recorder
 ```
 
-Then open **http://localhost:3000** (Grafana, admin/admin) and connect both
-data sources: InfluxDB (token `hft_token`) for live latency charts and QuestDB
-via the PostgreSQL wire protocol on port 8812 for SQL-level TCA queries.
+Then open **http://localhost:3000** (Grafana, admin/admin), add the QuestDB
+PostgreSQL data source, and query:
+
+```sql
+-- Live latency panel: p50 / p99 over 1-minute buckets
+SELECT timestamp,
+       percentile_approx(e2e_ns, 0.50) AS p50_ns,
+       percentile_approx(e2e_ns, 0.99) AS p99_ns
+FROM order_signals
+WHERE $__timeFilter(timestamp)
+SAMPLE BY 1m FILL(NULL);
+```
 
 ---
 
