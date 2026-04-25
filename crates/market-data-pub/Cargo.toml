@@ -1,0 +1,17 @@
+[package]
+name = "market-data-pub"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "market-data-pub"
+path = "src/main.rs"
+
+[dependencies]
+common = { path = "../common" }
+zenoh = { workspace = true }
+tokio = { workspace = true }
+clap = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+bytemuck = { workspace = true }

@@ -1,0 +1,72 @@
+services:
+
+  # ─── QuestDB ───────────────────────────────────────────────────────────────
+  # High-performance time-series database for raw tick and order audit data.
+  # Tables are auto-created on the first ILP write from the recorder.
+  #
+  # Interfaces:
+  #   9000 — Web console (SQL queries, table browser)
+  #   9009 — InfluxDB Line Protocol TCP ingestion (recorder writes here)
+  #   8812 — PostgreSQL wire protocol (psql, JDBC, Grafana data source)
+  questdb:
+    image: questdb/questdb:8.1.0
+    container_name: questdb
+    ports:
+      - "9000:9000"
+      - "9009:9009"
+      - "8812:8812"
+    volumes:
+      - questdb_data:/root/.questdb
+    environment:
+      QDB_TELEMETRY_ENABLED: "false"
+    restart: unless-stopped
+
+  # ─── InfluxDB ──────────────────────────────────────────────────────────────
+  # Metrics store for latency percentiles and throughput counters.
+  # The recorder POSTs execution_latency and throughput measurements every 5 s.
+  #
+  # Default credentials (change in production):
+  #   URL:    http://localhost:8086
+  #   Org:    hft_org
+  #   Bucket: hft
+  #   Token:  hft_token   (matches recorder --influxdb-token default)
+  influxdb:
+    image: influxdb:2.7
+    container_name: influxdb
+    ports:
+      - "8086:8086"
+    volumes:
+      - influxdb_data:/var/lib/influxdb2
+    environment:
+      DOCKER_INFLUXDB_INIT_MODE:         setup
+      DOCKER_INFLUXDB_INIT_USERNAME:     admin
+      DOCKER_INFLUXDB_INIT_PASSWORD:     admin_password
+      DOCKER_INFLUXDB_INIT_ORG:          hft_org
+      DOCKER_INFLUXDB_INIT_BUCKET:       hft
+      DOCKER_INFLUXDB_INIT_ADMIN_TOKEN:  hft_token
+    restart: unless-stopped
+
+  # ─── Grafana ───────────────────────────────────────────────────────────────
+  # Visualisation layer — connect to both InfluxDB and QuestDB.
+  #
+  # Add data sources after first login (admin / admin):
+  #   InfluxDB: http://influxdb:8086  org=hft_org  token=hft_token  bucket=hft
+  #   QuestDB:  PostgreSQL source → host=questdb  port=8812  db=qdb  user=admin  password=quest
+  grafana:
+    image: grafana/grafana:10.4.0
+    container_name: grafana
+    ports:
+      - "3000:3000"
+    volumes:
+      - grafana_data:/var/lib/grafana
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: admin
+    depends_on:
+      - influxdb
+      - questdb
+    restart: unless-stopped
+
+volumes:
+  questdb_data:
+  influxdb_data:
+  grafana_data:
