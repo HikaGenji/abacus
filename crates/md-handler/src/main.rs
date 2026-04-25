@@ -53,7 +53,9 @@ async fn main() {
     let iox_publisher = service.publisher_builder().create().unwrap();
 
     // zenoh: subscribe to market data feed
-    let session = zenoh::open(zenoh::Config::default()).await.unwrap();
+    let mut config = zenoh::Config::default();
+    config.insert_json5("listen/endpoints", r#"["tcp/0.0.0.0:0"]"#).unwrap();
+    let session = zenoh::open(config).await.unwrap();
     let subscriber = session.declare_subscriber(&args.key).await.unwrap();
 
     info!("md-handler ready — forwarding ticks to iceoryx2 shared memory");
@@ -77,7 +79,7 @@ async fn main() {
         }
 
         // Deserialise — one copy from network buffer into stack
-        let tick: MarketTick = *bytemuck::from_bytes(&bytes);
+        let tick: MarketTick = bytemuck::pod_read_unaligned(&bytes);
 
         // Zero-copy publish onto shared memory: loan → write → send
         match iox_publisher.loan_uninit() {

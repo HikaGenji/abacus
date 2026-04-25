@@ -113,13 +113,6 @@ impl IlpWriter {
         self.last_flush = Instant::now();
     }
 
-    /// Flush only if `needs_flush()` returns true.
-    pub async fn flush_if_needed(&mut self) {
-        if self.needs_flush() {
-            self.flush().await;
-        }
-    }
-
     async fn connect(&mut self) {
         match TcpStream::connect(&self.addr).await {
             Ok(s) => {

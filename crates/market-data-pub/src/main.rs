@@ -57,7 +57,9 @@ async fn main() {
         "starting market-data publisher"
     );
 
-    let session = zenoh::open(zenoh::Config::default()).await.unwrap();
+    let mut config = zenoh::Config::default();
+    config.insert_json5("listen/endpoints", r#"["tcp/0.0.0.0:0"]"#).unwrap();
+    let session = zenoh::open(config).await.unwrap();
     let publisher = session.declare_publisher(&key).await.unwrap();
 
     // Simple random-walk price simulation

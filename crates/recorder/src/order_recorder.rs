@@ -15,7 +15,7 @@ use tracing::{info, warn};
 
 pub async fn run(
     questdb_addr: String,
-    symbol: String,
+    _symbol: String,
     zenoh_session: zenoh::Session,
     order_key: String,
 ) {
@@ -50,7 +50,7 @@ pub async fn run(
                             continue;
                         }
 
-                        let order: OrderSignal = *bytemuck::from_bytes(&bytes);
+                        let order: OrderSignal = bytemuck::pod_read_unaligned(&bytes);
                         let decision_ns   = order.signal_ns.saturating_sub(order.tick_ns);
                         let e2e_ns        = submitted_ns.saturating_sub(order.tick_ns);
                         let submission_ns = submitted_ns.saturating_sub(order.signal_ns);

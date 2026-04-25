@@ -51,7 +51,9 @@ async fn main() {
         .unwrap();
     let subscriber = in_service.subscriber_builder().create().unwrap();
 
-    let session = zenoh::open(zenoh::Config::default()).await.unwrap();
+    let mut config = zenoh::Config::default();
+    config.insert_json5("listen/endpoints", r#"["tcp/0.0.0.0:0"]"#).unwrap();
+    let session = zenoh::open(config).await.unwrap();
     let publisher = session.declare_publisher(&args.key).await.unwrap();
 
     let mut e2e_latencies: Vec<u64> = Vec::with_capacity(10_000);

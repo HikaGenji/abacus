@@ -45,7 +45,9 @@ async fn main() {
     let (tick_tx, tick_rx) = mpsc::channel::<MarketTick>(args.tick_channel_cap);
     tick_recorder::spawn_iox_tick_thread(args.iox_tick_service.clone(), tick_tx);
 
-    let zenoh_session = zenoh::open(zenoh::Config::default()).await.unwrap();
+    let mut config = zenoh::Config::default();
+    config.insert_json5("listen/endpoints", r#"["tcp/0.0.0.0:0"]"#).unwrap();
+    let zenoh_session = zenoh::open(config).await.unwrap();
 
     info!(
         questdb = %args.questdb_addr,
