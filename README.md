@@ -62,32 +62,22 @@ cargo build --release
 ### Run the demo
 
 ```bash
-# In one terminal (or use tmux — the script handles it automatically):
+# Pipeline only (market-data-pub → md-handler → strategy → order-gateway):
 ./scripts/run_demo.sh
 
-# With a custom tick rate:
+# Custom tick rate:
 ./scripts/run_demo.sh --rate 50000
+
+# Full demo with recording — starts Docker infrastructure (QuestDB, InfluxDB,
+# Grafana) and the recorder crate alongside the pipeline:
+./scripts/run_demo.sh --record
 ```
 
-Watch the `order-gateway` logs for **end-to-end tick-to-order latency**.
+Watch the `order-gateway` pane for **end-to-end tick-to-order latency**.
+With `--record`, the recorder pane streams ingestion confirmations and every
+five seconds prints p50/p99/p999 latency percentiles to InfluxDB.
 
-### Record ticks and orders (TCA / best-execution / audit)
-
-Start the infrastructure, then run the recorder alongside the pipeline:
-
-```bash
-# Start QuestDB, InfluxDB, Grafana
-./scripts/run_infra.sh
-
-# Build release binaries
-cargo build --release
-
-# Run the pipeline (separate terminal or tmux)
-./scripts/run_demo.sh
-
-# Run the recorder (captures everything to QuestDB + InfluxDB)
-RUST_LOG=info ./target/release/recorder
-```
+Once `--record` is running:
 
 | UI | URL | Purpose |
 |----|-----|---------|
