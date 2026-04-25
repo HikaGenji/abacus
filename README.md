@@ -51,7 +51,27 @@ market-data-pub             md-handler  strategy          order-gateway
 
 - Rust 1.75+ (`rustup update stable`)
 - Linux (iceoryx2 shared memory uses POSIX IPC)
-- Docker + Docker Compose (optional — for QuestDB / InfluxDB / Grafana)
+- Docker + Docker Compose — required only for the recording stack (`--record`)
+
+### Docker services
+
+`docker-compose.yml` defines three containers used by the `recorder` crate:
+
+| Service | Port(s) | Role |
+|---------|---------|------|
+| **QuestDB** | 9000 (console), 9009 (ILP TCP), 8812 (PostgreSQL) | Stores every tick and order signal for TCA and auditing |
+| **InfluxDB** | 8086 | Receives latency percentile metrics every 5 s |
+| **Grafana** | 3000 | Dashboards connecting to both QuestDB and InfluxDB |
+
+The pipeline itself (`market-data-pub`, `md-handler`, `strategy`, `order-gateway`) has **no Docker dependency** — it runs as plain Rust binaries.
+
+If you want to control the infrastructure independently of the demo:
+
+```bash
+./scripts/run_infra.sh          # docker compose up -d
+./scripts/run_infra.sh down     # stop and remove containers
+./scripts/run_infra.sh logs     # stream container logs
+```
 
 ### Build
 
